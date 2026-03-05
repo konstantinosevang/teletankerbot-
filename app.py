@@ -35,6 +35,9 @@ ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 ssl_context.check_hostname = False
 ssl_context.verify_mode = ssl.CERT_NONE
 
+# Last activity time (crossing or "no activity" msg) - used for 10-min heartbeat
+last_activity_time = {"t": None}
+
 
 def is_tanker(ship_type):
     return ship_type is not None and ship_type in TANKER_TYPES
@@ -125,10 +128,24 @@ async def stream_tanker_crossings():
                                     msg = f"[{ts}] TANKER {direction} | MMSI:{mmsi} {name} | lat:{lat:.4f} lon:{lon:.4f}"
                                     print(msg)
                                     tg_text = f"🛢 <b>Tanker {direction.split()[0]}</b>\n{html.escape(name)}\nMMSI: {mmsi}\n📍 {lat:.4f}, {lon:.4f}\n🕐 {ts}"
+                                    last_activity_time["t"] = datetime.now(timezone.utc)
                                     asyncio.create_task(send_telegram(tg_text))
         except (TimeoutError, OSError) as e:
             print(f"Connection lost: {e}. Reconnecting in 10s...", file=sys.stderr)
             await asyncio.sleep(10)
+
+
+async def no_activity_heartbeat():
+    """Send 'no activity' every 10 minutes if no tanker crossings."""
+    deployment_time = datetime.now(timezone.utc)
+    while True:
+        await asyncio.sleep(600)  # 10 minutes
+        last = last_activity_time["t"] or deployment_time
+        elapsed = (datetime.now(timezone.utc) - last).total_seconds()
+        if elapsed >= 600:
+            ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+            await send_telegram(f"🕐 <b>No activity</b>\nStrait of Hormuz – no tanker crossings\n{ts}")
+            last_activity_time["t"] = datetime.now(timezone.utc)
 
 
 async def health(request):
@@ -137,8 +154,9 @@ async def health(request):
 
 
 async def start_background_tasks(app):
-    """Start AIS stream in background."""
+    """Start AIS stream and no-activity heartbeat in background."""
     asyncio.create_task(stream_tanker_crossings())
+    asyncio.create_task(no_activity_heartbeat())
 
 
 if __name__ == "__main__":
