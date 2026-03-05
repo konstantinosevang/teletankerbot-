@@ -38,9 +38,28 @@ ssl_context.verify_mode = ssl.CERT_NONE
 # Last activity time (crossing or "no activity" msg) - used for 10-min heartbeat
 last_activity_time = {"t": None}
 
+# Shared vessel data for in-strait count (updated by stream_tanker_crossings)
+vessel_info = {}  # MMSI -> {type, name}
+last_pos = {}     # MMSI -> (lat, lon)
+
+BBOX_LAT_MIN, BBOX_LAT_MAX = 25.7, 26.9
+BBOX_LON_MIN, BBOX_LON_MAX = 55.3, 57.3
+
+
+def in_bbox(lat, lon):
+    return BBOX_LAT_MIN <= lat <= BBOX_LAT_MAX and BBOX_LON_MIN <= lon <= BBOX_LON_MAX
+
 
 def is_tanker(ship_type):
     return ship_type is not None and ship_type in TANKER_TYPES
+
+
+def count_tankers_in_strait():
+    """Count tankers in strait bbox (anchored, moored, or moving)."""
+    return sum(
+        1 for mmsi, pos in last_pos.items()
+        if in_bbox(pos[0], pos[1]) and is_tanker(vessel_info.get(mmsi, {}).get("type"))
+    )
 
 
 def _get_proxy():
@@ -73,9 +92,6 @@ async def stream_tanker_crossings():
     api_key = os.getenv("aisstream_api_key")
     if not api_key:
         raise ValueError("Missing aisstream_api_key in .env")
-
-    vessel_info = {}  # MMSI -> {type, name}
-    last_pos = {}     # MMSI -> (lat, lon)
 
     proxy = _get_proxy() or None
     while True:
@@ -142,7 +158,11 @@ async def no_activity_heartbeat():
         elapsed = (datetime.now(timezone.utc) - last).total_seconds() if last else 9999
         if last is None or elapsed >= 600:
             ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-            await send_telegram(f"🕐 <b>No activity</b>\nStrait of Hormuz – no tanker crossings\n{ts}")
+            count = count_tankers_in_strait()
+            await send_telegram(
+                f"🕐 <b>No activity</b>\nStrait of Hormuz – no tanker crossings\n"
+                f"🚢 <b>{count} tankers</b> currently in the strait\n{ts}"
+            )
             last_activity_time["t"] = datetime.now(timezone.utc)
         await asyncio.sleep(600)  # 10 minutes
 
