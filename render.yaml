@@ -1,0 +1,13 @@
+services:
+  - type: worker
+    name: teletankerbot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: aisstream_api_key
+        sync: false
+      - key: telegram_bot_token
+        sync: false
+      - key: telegram_chat_id
+        sync: false
