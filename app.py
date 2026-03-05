@@ -19,8 +19,8 @@ from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
-# Strait of Hormuz bounding box
-STRAIT_OF_HORMUZ_BBOX = [[[25.7, 55.3], [26.9, 57.3]]]
+# Strait of Hormuz bounding box (slightly expanded for coverage)
+STRAIT_OF_HORMUZ_BBOX = [[[25.5, 55.0], [27.0, 57.5]]]
 
 # Gate longitude: crossing west = into Persian Gulf, east = to Gulf of Oman
 GATE_LON = 56.25
@@ -42,8 +42,8 @@ last_activity_time = {"t": None}
 vessel_info = {}  # MMSI -> {type, name}
 last_pos = {}     # MMSI -> (lat, lon)
 
-BBOX_LAT_MIN, BBOX_LAT_MAX = 25.7, 26.9
-BBOX_LON_MIN, BBOX_LON_MAX = 55.3, 57.3
+BBOX_LAT_MIN, BBOX_LAT_MAX = 25.5, 27.0
+BBOX_LON_MIN, BBOX_LON_MAX = 55.0, 57.5
 
 
 def in_bbox(lat, lon):
@@ -52,6 +52,11 @@ def in_bbox(lat, lon):
 
 def is_tanker(ship_type):
     return ship_type is not None and ship_type in TANKER_TYPES
+
+
+def count_vessels_in_strait():
+    """Count all vessels in strait bbox."""
+    return sum(1 for mmsi, pos in last_pos.items() if in_bbox(pos[0], pos[1]))
 
 
 def count_tankers_in_strait():
@@ -105,7 +110,13 @@ async def stream_tanker_crossings():
                 subscribe = {
                     "APIKey": api_key,
                     "BoundingBoxes": STRAIT_OF_HORMUZ_BBOX,
-                    "FilterMessageTypes": ["PositionReport", "ShipStaticData"],
+                    "FilterMessageTypes": [
+                        "PositionReport",
+                        "ShipStaticData",
+                        "ExtendedClassBPositionReport",
+                        "StandardClassBPositionReport",
+                        "StaticDataReport",
+                    ],
                 }
                 await ws.send(json.dumps(subscribe))
 
@@ -121,6 +132,47 @@ async def stream_tanker_crossings():
                             "type": static.get("Type"),
                             "name": static.get("Name") or meta.get("ShipName", ""),
                         }
+
+                    elif msg_type == "StaticDataReport":
+                        report = data["Message"]["StaticDataReport"]
+                        mmsi = report["UserID"]
+                        if mmsi not in vessel_info:
+                            vessel_info[mmsi] = {"type": None, "name": ""}
+                        report_a = report.get("ReportA") or {}
+                        report_b = report.get("ReportB") or {}
+                        if report_a.get("Valid") and report_a.get("Name"):
+                            vessel_info[mmsi]["name"] = report_a.get("Name", "") or vessel_info[mmsi]["name"]
+                        if report_b.get("Valid") and report_b.get("ShipType") is not None:
+                            vessel_info[mmsi]["type"] = report_b.get("ShipType")
+
+                    elif msg_type == "ExtendedClassBPositionReport":
+                        report = data["Message"]["ExtendedClassBPositionReport"]
+                        mmsi = report["UserID"]
+                        lat, lon = report["Latitude"], report["Longitude"]
+                        prev = last_pos.get(mmsi)
+                        last_pos[mmsi] = (lat, lon)
+                        if mmsi not in vessel_info:
+                            vessel_info[mmsi] = {"type": None, "name": ""}
+                        vessel_info[mmsi]["type"] = report.get("Type", vessel_info[mmsi].get("type"))
+                        vessel_info[mmsi]["name"] = report.get("Name", "") or vessel_info[mmsi].get("name", "")
+                        if prev is not None:
+                            prev_lon = prev[1]
+                            crossed_west = prev_lon > GATE_LON and lon < GATE_LON
+                            crossed_east = prev_lon < GATE_LON and lon > GATE_LON
+                            if crossed_west or crossed_east:
+                                if is_tanker(vessel_info[mmsi].get("type")):
+                                    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+                                    direction = "ENTER (-> Persian Gulf)" if crossed_west else "EXIT (-> Gulf of Oman)"
+                                    name = (vessel_info[mmsi].get("name") or "").strip() or "-"
+                                    tg_text = f"🛢 <b>Tanker {direction.split()[0]}</b>\n{html.escape(name)}\nMMSI: {mmsi}\n📍 {lat:.4f}, {lon:.4f}\n🕐 {ts}"
+                                    last_activity_time["t"] = datetime.now(timezone.utc)
+                                    asyncio.create_task(send_telegram(tg_text))
+
+                    elif msg_type == "StandardClassBPositionReport":
+                        report = data["Message"]["StandardClassBPositionReport"]
+                        mmsi = report["UserID"]
+                        lat, lon = report["Latitude"], report["Longitude"]
+                        last_pos[mmsi] = (lat, lon)
 
                     elif msg_type == "PositionReport":
                         report = data["Message"]["PositionReport"]
@@ -158,10 +210,11 @@ async def no_activity_heartbeat():
         elapsed = (datetime.now(timezone.utc) - last).total_seconds() if last else 9999
         if last is None or elapsed >= 600:
             ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-            count = count_tankers_in_strait()
+            total = count_vessels_in_strait()
+            tankers = count_tankers_in_strait()
             await send_telegram(
                 f"🕐 <b>No activity</b>\nStrait of Hormuz – no tanker crossings\n"
-                f"🚢 <b>{count} tankers</b> currently in the strait\n{ts}"
+                f"🚢 <b>{total} vessels</b> in strait ({tankers} tankers)\n{ts}"
             )
             last_activity_time["t"] = datetime.now(timezone.utc)
         await asyncio.sleep(600)  # 10 minutes
@@ -170,6 +223,13 @@ async def no_activity_heartbeat():
 async def health(request):
     """Health check for Render."""
     return web.Response(text="ok")
+
+
+async def stats(request):
+    """Debug: live vessel counts."""
+    total = count_vessels_in_strait()
+    tankers = count_tankers_in_strait()
+    return web.json_response({"vessels_in_strait": total, "tankers_in_strait": tankers})
 
 
 async def start_background_tasks(app):
@@ -182,5 +242,6 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
     app = web.Application()
     app.router.add_get("/", health)
+    app.router.add_get("/stats", stats)
     app.on_startup.append(start_background_tasks)
     web.run_app(app, host="0.0.0.0", port=port)
