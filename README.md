@@ -2,6 +2,8 @@
 
 Tracks tankers entering and exiting the Strait of Hormuz via AIS data. Sends Telegram notifications for each crossing.
 
+**See [VALIDATION.md](VALIDATION.md)** for how to verify the app is working correctly and cross-check against MarineTraffic.
+
 ## Setup
 
 1. **Clone and install**

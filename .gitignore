@@ -16,3 +16,9 @@ env/
 .vscode/
 *.swp
 *.swo
+
+# SQLite (created at runtime)
+*.db
+
+# Test scripts (local use)
+tests/
