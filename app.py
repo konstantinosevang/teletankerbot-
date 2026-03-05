@@ -2,6 +2,7 @@
 Track tankers entering/exiting the Strait of Hormuz.
 Uses AISStream API - subscribes to PositionReport and ShipStaticData.
 Sends Telegram notifications for each crossing.
+Runs as web service (for Render free tier) with minimal HTTP server for health checks.
 """
 import asyncio
 import html
@@ -12,6 +13,7 @@ import sys
 from datetime import datetime, timezone
 
 import aiohttp
+from aiohttp import web
 import websockets
 from dotenv import load_dotenv
 
@@ -73,8 +75,7 @@ async def stream_tanker_crossings():
     last_pos = {}     # MMSI -> (lat, lon)
 
     proxy = _get_proxy() or None
-    max_retries = 3
-    for attempt in range(max_retries):
+    while True:
         try:
             async with websockets.connect(
                 WS_URL,
@@ -125,19 +126,24 @@ async def stream_tanker_crossings():
                                     print(msg)
                                     tg_text = f"🛢 <b>Tanker {direction.split()[0]}</b>\n{html.escape(name)}\nMMSI: {mmsi}\n📍 {lat:.4f}, {lon:.4f}\n🕐 {ts}"
                                     asyncio.create_task(send_telegram(tg_text))
-            return
         except (TimeoutError, OSError) as e:
-            if attempt < max_retries - 1:
-                wait = 5 * (attempt + 1)
-                print(f"Connection attempt {attempt + 1} failed: {e}. Retrying in {wait}s...", file=sys.stderr)
-                await asyncio.sleep(wait)
-            else:
-                print("\nConnection failed. Troubleshooting:", file=sys.stderr)
-                print("  - Corporate firewall may block WebSockets. Try from home/mobile hotspot.", file=sys.stderr)
-                print("  - If behind a proxy, add to .env: proxy_url=http://proxy:port", file=sys.stderr)
-                print("  - For SOCKS5: proxy_url=socks5://proxy:1080 (requires: pip install python-socks[asyncio])", file=sys.stderr)
-                raise
+            print(f"Connection lost: {e}. Reconnecting in 10s...", file=sys.stderr)
+            await asyncio.sleep(10)
+
+
+async def health(request):
+    """Health check for Render."""
+    return web.Response(text="ok")
+
+
+async def start_background_tasks(app):
+    """Start AIS stream in background."""
+    asyncio.create_task(stream_tanker_crossings())
 
 
 if __name__ == "__main__":
-    asyncio.run(stream_tanker_crossings())
+    port = int(os.getenv("PORT", 10000))
+    app = web.Application()
+    app.router.add_get("/", health)
+    app.on_startup.append(start_background_tasks)
+    web.run_app(app, host="0.0.0.0", port=port)

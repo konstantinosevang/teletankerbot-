@@ -1,9 +1,10 @@
 services:
-  - type: worker
+  - type: web
     name: teletankerbot
     runtime: python
     buildCommand: pip install -r requirements.txt
     startCommand: python app.py
+    plan: free
     envVars:
       - key: aisstream_api_key
         sync: false
