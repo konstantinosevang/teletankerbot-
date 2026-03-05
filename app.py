@@ -136,16 +136,15 @@ async def stream_tanker_crossings():
 
 
 async def no_activity_heartbeat():
-    """Send 'no activity' every 10 minutes if no tanker crossings."""
-    deployment_time = datetime.now(timezone.utc)
+    """Send 'no activity' when app goes live, then every 10 minutes if no tanker crossings."""
     while True:
-        await asyncio.sleep(600)  # 10 minutes
-        last = last_activity_time["t"] or deployment_time
-        elapsed = (datetime.now(timezone.utc) - last).total_seconds()
-        if elapsed >= 600:
+        last = last_activity_time["t"]
+        elapsed = (datetime.now(timezone.utc) - last).total_seconds() if last else 9999
+        if last is None or elapsed >= 600:
             ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
             await send_telegram(f"🕐 <b>No activity</b>\nStrait of Hormuz – no tanker crossings\n{ts}")
             last_activity_time["t"] = datetime.now(timezone.utc)
+        await asyncio.sleep(600)  # 10 minutes
 
 
 async def health(request):
