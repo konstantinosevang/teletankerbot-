@@ -127,6 +127,9 @@ async def run_scheduled_loop():
     """Run fetch and send at scheduled times."""
     init_db()
     log.info("Scheduled times (UTC): %s", [f"{h:02d}:{m:02d}" for h, m in SCHEDULE])
+    # Fetch and send on startup (every deployment)
+    log.info("Startup: fetching BDTI and sending...")
+    await fetch_store_and_send()
     while True:
         delay = _seconds_until_next_schedule()
         log.info("Next run in %.0f s (at %s UTC)", delay, datetime.now(timezone.utc).strftime("%H:%M"))

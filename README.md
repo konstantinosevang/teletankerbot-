@@ -23,3 +23,13 @@ python app.py
 
 - **API**: https://blacksun-api.balticexchange.com/api/ticker
 - **BDTI** stored in `teletanker.db`
+
+## Deployment (custom)
+
+Run on any machine that stays on (VPS, Raspberry Pi, etc.):
+
+```bash
+python app.py
+```
+
+Or use cron to run at schedule times (Linux) – create a small script that fetches once, then use cron entries for 08:00, 17:59, 18:00, 18:01, 18:05 UTC.
