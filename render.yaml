@@ -6,8 +6,6 @@ services:
     startCommand: python app.py
     plan: free
     envVars:
-      - key: aisstream_api_key
-        sync: false
       - key: telegram_bot_token
         sync: false
       - key: telegram_chat_id

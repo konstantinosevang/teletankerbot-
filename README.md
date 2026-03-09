@@ -1,38 +1,25 @@
 # TeleTankerBot
 
-Tracks tankers entering and exiting the Strait of Hormuz via AIS data. Sends Telegram notifications for each crossing.
+Fetches the Baltic Exchange ticker at set times, stores **BDTI** (Baltic Dirty Tanker Index), sends Telegram updates.
 
-**See [VALIDATION.md](VALIDATION.md)** for how to verify the app is working correctly and cross-check against MarineTraffic.
+## Schedule (UTC)
+
+Fetch and send at: **08:00**, **17:59**, **18:00**, **18:01**, **18:05**
 
 ## Setup
 
-1. **Clone and install**
-   ```bash
-   pip install -r requirements.txt
-   ```
+1. Create a Telegram bot via [@BotFather](https://t.me/BotFather)
+2. Get your chat ID (message the bot, then use `getUpdates` API)
+3. Copy `.env.example` to `.env` and set `telegram_bot_token`, `telegram_chat_id`
 
-2. **Configure environment**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your keys
-   ```
+## Run
 
-   Required variables:
-   - `aisstream_api_key` — from [aisstream.io](https://aisstream.io/authenticate)
-   - `telegram_bot_token` — from [@BotFather](https://t.me/BotFather)
-   - `telegram_chat_id` — your chat ID (message the bot, then get from `getUpdates` API)
+```bash
+pip install -r requirements.txt
+python app.py
+```
 
-3. **Run locally**
-   ```bash
-   python app.py
-   ```
+## Data
 
-## Deploy to Render
-
-1. Push this repo to GitHub.
-2. In [Render Dashboard](https://dashboard.render.com), click **New** → **Background Worker**.
-3. Connect your GitHub repo.
-4. Render will detect `render.yaml` — or set manually:
-   - **Build Command:** `pip install -r requirements.txt`
-   - **Start Command:** `python app.py`
-5. Add environment variables in Render: `aisstream_api_key`, `telegram_bot_token`, `telegram_chat_id`.
+- **API**: https://blacksun-api.balticexchange.com/api/ticker
+- **BDTI** stored in `teletanker.db`
