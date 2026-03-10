@@ -1,5 +1,6 @@
-"""SQLite storage for BDTI (Baltic Dirty Tanker Index) history."""
+"""SQLite storage for BDTI and AIS ledger."""
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parent / "teletanker.db"
@@ -42,6 +43,14 @@ def init_db():
                 is_stationary INTEGER NOT NULL
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS vessel_cache (
+                mmsi INTEGER PRIMARY KEY,
+                ship_type INTEGER,
+                name TEXT,
+                updated_at TEXT NOT NULL
+            )
+        """)
 
 
 def insert_bdti(value: float, previous: float | None, index_date: str):
@@ -77,7 +86,6 @@ def get_bdti_history(limit: int = 100):
 # --- AIS silence alerts ---
 def add_silence_alert(mmsi: int) -> bool:
     """Record that we alerted for this MMSI. Returns True if already alerted (skip)."""
-    from datetime import datetime, timezone
     now = datetime.now(timezone.utc).isoformat()
     try:
         with _conn() as conn:
@@ -97,3 +105,66 @@ def remove_ledger(mmsi: int):
     """Remove vessel from ledger (DB)."""
     with _conn() as conn:
         conn.execute("DELETE FROM ledger WHERE mmsi = ?", (mmsi,))
+
+
+def get_ledger() -> dict:
+    """Load ledger from DB. Returns {mmsi: {lat, lon, zone, speed, last_seen, name, ...}}."""
+    out = {}
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT mmsi, lat, lon, zone, speed, last_seen, name, ship_type, is_stationary FROM ledger"
+        ).fetchall()
+        for row in rows:
+            out[row["mmsi"]] = {
+                "lat": row["lat"],
+                "lon": row["lon"],
+                "zone": row["zone"],
+                "speed": row["speed"],
+                "last_seen": row["last_seen"],
+                "name": row["name"] or "",
+                "ship_type": row["ship_type"],
+                "is_stationary": bool(row["is_stationary"]),
+            }
+    return out
+
+
+def upsert_ledger(mmsi: int, lat: float, lon: float, zone: str, speed: float | None, last_seen: float, name: str, ship_type: int | None, is_stationary: bool):
+    with _conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO ledger (mmsi, lat, lon, zone, speed, last_seen, name, ship_type, is_stationary)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(mmsi) DO UPDATE SET
+                lat = excluded.lat, lon = excluded.lon, zone = excluded.zone,
+                speed = excluded.speed, last_seen = excluded.last_seen,
+                name = COALESCE(NULLIF(excluded.name, ''), ledger.name),
+                ship_type = COALESCE(excluded.ship_type, ledger.ship_type),
+                is_stationary = excluded.is_stationary
+            """,
+            (mmsi, lat, lon, zone, speed, last_seen, name or "", ship_type, 1 if is_stationary else 0),
+        )
+
+
+def upsert_vessel(mmsi: int, ship_type: int | None, name: str):
+    now = datetime.now(timezone.utc).isoformat()
+    with _conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO vessel_cache (mmsi, ship_type, name, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(mmsi) DO UPDATE SET
+                ship_type = COALESCE(excluded.ship_type, vessel_cache.ship_type),
+                name = COALESCE(NULLIF(excluded.name, ''), vessel_cache.name),
+                updated_at = excluded.updated_at
+            """,
+            (mmsi, ship_type, name or "", now),
+        )
+
+
+def load_vessel_cache() -> dict:
+    out = {}
+    with _conn() as conn:
+        rows = conn.execute("SELECT mmsi, ship_type, name FROM vessel_cache").fetchall()
+        for row in rows:
+            out[row["mmsi"]] = {"type": row["ship_type"], "name": row["name"] or ""}
+    return out

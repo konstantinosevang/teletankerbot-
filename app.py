@@ -1,15 +1,13 @@
 """
-Teletankerbot - fetches Baltic Exchange ticker at set times, stores BDTI, sends Telegram.
+Teletankerbot - sends various message types via Telegram.
+Logic lives in separate modules; app.py provides send_telegram and registry.
 """
 import asyncio
 import logging
 import os
-from datetime import datetime, timedelta, timezone
 
 import aiohttp
 from dotenv import load_dotenv
-
-from db import init_db, insert_bdti
 
 load_dotenv()
 
@@ -20,13 +18,14 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-TICKER_URL = "https://blacksun-api.balticexchange.com/api/ticker"
+# --- Message types this app sends (implemented in other modules) ---
+MESSAGE_TYPES = {
+    "BDTI",
+    "AIS_SILENCE",
+    # Add more as you implement them
+}
 
-# Scheduled times (hour, minute) UTC - fetch and send at these times
-SCHEDULE = [(8, 0), (17, 59), (18, 0), (18, 1), (18, 5)]
 
-
-# --- Telegram ---
 async def send_telegram(text: str) -> bool:
     """Send message via Telegram Bot API."""
     log.info("Telegram:\n%s", text)
@@ -46,96 +45,13 @@ async def send_telegram(text: str) -> bool:
         return False
 
 
-# --- Baltic Exchange API ---
-async def fetch_ticker() -> list[dict]:
-    """Fetch ticker from Baltic Exchange API."""
-    async with aiohttp.ClientSession() as session:
-        async with session.get(TICKER_URL, timeout=aiohttp.ClientTimeout(total=15)) as r:
-            r.raise_for_status()
-            return await r.json()
-
-
-def extract_bdti(data: list[dict]) -> dict | None:
-    """Extract BDTI (Baltic Dirty Tanker Index) from ticker response."""
-    for item in data:
-        if item.get("indexName") == "BDTI":
-            curr = item.get("current") or {}
-            prev = item.get("previous") or {}
-            return {
-                "value": curr.get("value"),
-                "previous": prev.get("value"),
-                "index_date": curr.get("indexDate"),
-            }
-    return None
-
-
-def _format_message(value: float, previous: float | None, index_date: str) -> str:
-    """Format BDTI update message."""
-    date_str = index_date.split("T")[0] if index_date else ""
-
-    if previous is not None:
-        change = value - previous
-        pct = (change / previous) * 100
-        sign = "+" if change >= 0 else ""
-        change_line = f"Change: {sign}{change:.0f} ({sign}{pct:.2f}%) today"
-    else:
-        change_line = "Change: —"
-
-    return (
-        f"🚢 <b>BDTI Update</b>\n\n"
-        f"Index: {value:.0f}\n"
-        f"{change_line}\n\n"
-        f"Date: {date_str}"
-    )
-
-
-async def fetch_store_and_send():
-    """Fetch ticker, store BDTI, send Telegram with formatted message."""
-    try:
-        data = await fetch_ticker()
-        bdti = extract_bdti(data)
-        if not bdti or bdti.get("value") is None:
-            log.warning("BDTI not found in ticker response")
-            return
-
-        value = float(bdti["value"])
-        previous = float(bdti["previous"]) if bdti.get("previous") is not None else None
-        index_date = bdti.get("index_date") or ""
-
-        insert_bdti(value, previous, index_date)
-        log.info("BDTI stored: %.2f (prev: %s) @ %s", value, previous, index_date)
-
-        msg = _format_message(value, previous, index_date)
-        await send_telegram(msg)
-    except Exception as e:
-        log.error("Fetch/store/send failed: %s", e)
-
-
-def _seconds_until_next_schedule() -> float:
-    """Seconds until next scheduled time (UTC)."""
-    now = datetime.now(timezone.utc)
-    candidates = []
-    for h, m in SCHEDULE:
-        target = now.replace(hour=h, minute=m, second=0, microsecond=0)
-        if target <= now:
-            target += timedelta(days=1)
-        candidates.append((target - now).total_seconds())
-    return min(candidates)
-
-
-async def run_scheduled_loop():
-    """Run fetch and send at scheduled times."""
-    init_db()
-    log.info("Scheduled times (UTC): %s", [f"{h:02d}:{m:02d}" for h, m in SCHEDULE])
-    # Fetch and send on startup (every deployment)
-    log.info("Startup: fetching BDTI and sending...")
-    await fetch_store_and_send()
-    while True:
-        delay = _seconds_until_next_schedule()
-        log.info("Next run in %.0f s (at %s UTC)", delay, datetime.now(timezone.utc).strftime("%H:%M"))
-        await asyncio.sleep(delay)
-        await fetch_store_and_send()
+async def main():
+    log.info("Registered message types: %s", sorted(MESSAGE_TYPES))
+    # Wire up your message sources here - e.g.:
+    # asyncio.create_task(run_bdti_loop())
+    # asyncio.create_task(ais_silence_check(ledger, send_telegram, ...))
+    await asyncio.Future()  # run forever (add your tasks above)
 
 
 if __name__ == "__main__":
-    asyncio.run(run_scheduled_loop())
+    asyncio.run(main())
