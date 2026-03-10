@@ -23,6 +23,25 @@ def init_db():
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_bdti_index_date ON bdti(index_date)")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS silence_alerts (
+                mmsi INTEGER PRIMARY KEY,
+                alerted_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS ledger (
+                mmsi INTEGER PRIMARY KEY,
+                lat REAL NOT NULL,
+                lon REAL NOT NULL,
+                zone TEXT NOT NULL,
+                speed REAL,
+                last_seen REAL NOT NULL,
+                name TEXT,
+                ship_type INTEGER,
+                is_stationary INTEGER NOT NULL
+            )
+        """)
 
 
 def insert_bdti(value: float, previous: float | None, index_date: str):
@@ -53,3 +72,28 @@ def get_bdti_history(limit: int = 100):
             (limit,),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+# --- AIS silence alerts ---
+def add_silence_alert(mmsi: int) -> bool:
+    """Record that we alerted for this MMSI. Returns True if already alerted (skip)."""
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        with _conn() as conn:
+            conn.execute("INSERT INTO silence_alerts (mmsi, alerted_at) VALUES (?, ?)", (mmsi, now))
+        return False  # New alert
+    except sqlite3.IntegrityError:
+        return True  # Already alerted
+
+
+def remove_silence_alert(mmsi: int):
+    """Remove silence alert when vessel resumes transmitting."""
+    with _conn() as conn:
+        conn.execute("DELETE FROM silence_alerts WHERE mmsi = ?", (mmsi,))
+
+
+def remove_ledger(mmsi: int):
+    """Remove vessel from ledger (DB)."""
+    with _conn() as conn:
+        conn.execute("DELETE FROM ledger WHERE mmsi = ?", (mmsi,))
