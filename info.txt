@@ -1,3 +1,27 @@
 tuton en gia data pu en kala na piame
 
 gold oil usd commodities geopolitics
+
+
+oil - bdti, tanker supply, wars, 
+
+gold - interest rates, human confidence
+
+usd - dxy, us treusury yields, 
+
+yields - 
+
+| Pattern                   | Gold | Oil | USD         | Yields | Market Meaning       |
+| ------------------------- | ---- | --- | ----------- | ------ | -------------------- |
+| Inflation cycle           | ↑    | ↑   | ↓ or stable | ↑      | Economy overheating  |
+| Recession risk            | ↑    | ↓   | ↑           | ↓      | Growth slowdown      |
+| War / geopolitical stress | ↑    | ↑   | ↑           | Mixed  | Risk-off environment |
+| Strong economic growth    | ↓    | ↑   | Stable      | ↑      | Expansion phase      |
+
+| Concept | Key Idea                        |
+| ------- | ------------------------------- |
+| Gold    | Risk / inflation indicator      |
+| Oil     | Energy demand and supply shocks |
+| Dollar  | Global liquidity                |
+| Yields  | Cost of capital                 |
+
