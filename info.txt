@@ -25,18 +25,3 @@ yields -
 | Dollar  | Global liquidity                |
 | Yields  | Cost of capital                 |
 
-
-
-ais put back on 
-
---- AIS silence source (from previous commits) ---
-Repo: teletankerbot (this repo)
-Commit: c180ac8 or 7241ab7 (before 6118fcb "use bdti instead")
-File: app.py
-Function: async def ais_silence_check():  # line ~387
-  - Runs every HEARTBEAT_INTERVAL (20 min)
-  - For each vessel in ledger with last_seen > 20 min ago
-  - Calls add_silence_alert(mmsi), then send_telegram(tg)
-  - Message: "AIS silence" + name + MMSI + Last + "No signal 20+ min"
-Started by: asyncio.create_task(ais_silence_check()) in start_background_tasks()
-If you still get these msgs: something is running old code (Render, another service, etc.)
