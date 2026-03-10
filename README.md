@@ -19,10 +19,20 @@ pip install -r requirements.txt
 python app.py
 ```
 
+## Test GUI
+
+For manual testing without waiting for schedules:
+
+```bash
+python gui.py
+```
+
+Buttons: **BDTI** (fetch & send), **Trump** (check now), **Hormuz** (send snapshot). Log output appears in the window.
+
 ## Data
 
-- **API**: https://blacksun-api.balticexchange.com/api/ticker
-- **BDTI** stored in `teletanker.db`
+- **BDTI**: https://blacksun-api.balticexchange.com/api/ticker → stored in `teletanker.db`
+- **Hormuz**: aisstream.io WebSocket → tanker snapshot in Strait (waiting/transiting)
 
 ## Deployment (custom)
 

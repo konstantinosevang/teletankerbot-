@@ -1,4 +1,4 @@
-"""SQLite storage for BDTI (Baltic Dirty Tanker Index) history."""
+"""SQLite storage for BDTI and vessel details."""
 import sqlite3
 from pathlib import Path
 
@@ -25,21 +25,42 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_bdti_index_date ON bdti(index_date)")
 
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS ais_silence_alerts (
-                mmsi INTEGER PRIMARY KEY,
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
-            )
-        """)
-
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS ais_ledger (
+            CREATE TABLE IF NOT EXISTS vessels (
                 mmsi INTEGER PRIMARY KEY,
                 name TEXT,
                 lat REAL,
                 lon REAL,
-                last_seen REAL
+                sog REAL,
+                cog REAL,
+                nav_status INTEGER,
+                vessel_type TEXT,
+                flag TEXT,
+                imo INTEGER,
+                destination TEXT,
+                destination_port TEXT,
+                eta TEXT,
+                deadweight_tonnage REAL,
+                length REAL,
+                year_built INTEGER,
+                owner_name TEXT,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             )
         """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS vessel_crossings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                mmsi INTEGER NOT NULL,
+                from_zone TEXT NOT NULL,
+                to_zone TEXT NOT NULL,
+                direction TEXT NOT NULL,
+                vessel_name TEXT,
+                vessel_type TEXT,
+                crossed_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_crossings_mmsi ON vessel_crossings(mmsi)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_crossings_crossed_at ON vessel_crossings(crossed_at)")
 
 
 def insert_bdti(value: float, previous: float | None, index_date: str):
@@ -72,30 +93,65 @@ def get_bdti_history(limit: int = 100):
     return [dict(r) for r in rows]
 
 
-def add_silence_alert(mmsi: int) -> bool:
-    """
-    Returns True if alert already exists for this MMSI, else stores it and returns False.
-    """
+def upsert_vessels(vessels: dict):
+    """Store or update vessel details. vessels: {mmsi: {name, lat, lon, ...}}."""
+    if not vessels:
+        return
     with _conn() as conn:
-        row = conn.execute(
-            "SELECT 1 FROM ais_silence_alerts WHERE mmsi = ?",
-            (mmsi,),
-        ).fetchone()
+        for mmsi, v in vessels.items():
+            if mmsi is None:
+                continue
+            conn.execute(
+                """
+                INSERT INTO vessels (mmsi, name, lat, lon, sog, cog, nav_status, vessel_type,
+                    flag, imo, destination, destination_port, eta, deadweight_tonnage,
+                    length, year_built, owner_name, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                ON CONFLICT(mmsi) DO UPDATE SET
+                    name=excluded.name, lat=excluded.lat, lon=excluded.lon,
+                    sog=excluded.sog, cog=excluded.cog, nav_status=excluded.nav_status,
+                    vessel_type=excluded.vessel_type, flag=excluded.flag, imo=excluded.imo,
+                    destination=excluded.destination, destination_port=excluded.destination_port,
+                    eta=excluded.eta, deadweight_tonnage=excluded.deadweight_tonnage,
+                    length=excluded.length, year_built=excluded.year_built,
+                    owner_name=excluded.owner_name, updated_at=datetime('now')
+                """,
+                (
+                    mmsi,
+                    v.get("name") or "",
+                    v.get("lat"),
+                    v.get("lon"),
+                    v.get("sog"),
+                    v.get("cog"),
+                    v.get("nav_status"),
+                    v.get("vessel_type"),
+                    v.get("flag"),
+                    v.get("imo"),
+                    v.get("destination"),
+                    v.get("destination_port"),
+                    v.get("eta"),
+                    v.get("deadweight_tonnage"),
+                    v.get("length"),
+                    v.get("year_built"),
+                    v.get("owner_name"),
+                ),
+            )
 
-        if row:
-            return True
 
+def insert_crossing(mmsi: int, from_zone: str, to_zone: str, direction: str, vessel: dict):
+    """Record a tanker crossing the Strait of Hormuz."""
+    with _conn() as conn:
         conn.execute(
-            "INSERT INTO ais_silence_alerts (mmsi) VALUES (?)",
-            (mmsi,),
+            """
+            INSERT INTO vessel_crossings (mmsi, from_zone, to_zone, direction, vessel_name, vessel_type)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                mmsi,
+                from_zone,
+                to_zone,
+                direction,
+                vessel.get("name"),
+                vessel.get("vessel_type"),
+            ),
         )
-        return False
-
-
-def remove_ledger(mmsi: int):
-    """
-    Remove vessel from ledger and clear its silence alert state.
-    """
-    with _conn() as conn:
-        conn.execute("DELETE FROM ais_ledger WHERE mmsi = ?", (mmsi,))
-        conn.execute("DELETE FROM ais_silence_alerts WHERE mmsi = ?", (mmsi,))

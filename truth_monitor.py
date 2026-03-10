@@ -1,40 +1,32 @@
-# truth_monitor.py
+# truth_monitor.py - Trump Truth Social alerts
 import os
-from dotenv import load_dotenv
-
-# Load .env BEFORE importing truthbrush
-load_dotenv()
-
-# Force-map your custom env vars to the names truthbrush expects
-if os.getenv("truth_access_token") and not os.getenv("TRUTHSOCIAL_TOKEN"):
-    os.environ["TRUTHSOCIAL_TOKEN"] = os.getenv("truth_access_token")
-
-if os.getenv("truth_username") and not os.getenv("TRUTHSOCIAL_USERNAME"):
-    os.environ["TRUTHSOCIAL_USERNAME"] = os.getenv("truth_username")
-
-if os.getenv("truth_password") and not os.getenv("TRUTHSOCIAL_PASSWORD"):
-    os.environ["TRUTHSOCIAL_PASSWORD"] = os.getenv("truth_password")
-
 import asyncio
-import logging
 import json
+import logging
 import re
 from html import unescape
 from itertools import islice
+
+from dotenv import load_dotenv
+
+load_dotenv()
+if os.getenv("truth_access_token") and not os.getenv("TRUTHSOCIAL_TOKEN"):
+    os.environ["TRUTHSOCIAL_TOKEN"] = os.getenv("truth_access_token")
+if os.getenv("truth_username") and not os.getenv("TRUTHSOCIAL_USERNAME"):
+    os.environ["TRUTHSOCIAL_USERNAME"] = os.getenv("truth_username")
+if os.getenv("truth_password") and not os.getenv("TRUTHSOCIAL_PASSWORD"):
+    os.environ["TRUTHSOCIAL_PASSWORD"] = os.getenv("truth_password")
+
 import truthbrush as tb
 
-LAST_POST_FILE = "last_trump_post.json"
-TRUMP_KEYWORDS = [
-    "iran", "hormuz", "oil", "strait", "war", "attack", "blockade",
-    "navy", "escort", "energy", "brent", "crude", "sanction"
-]
+from props import LAST_TRUMP_POST_FILE, TRUMP_KEYWORDS, TRUMP_USERNAME
+
 
 def load_last_post():
-    if os.path.exists(LAST_POST_FILE):
+    if LAST_TRUMP_POST_FILE.exists():
         try:
-            with open(LAST_POST_FILE, "r") as f:
-                data = json.load(f)
-                return data.get("timestamp"), data.get("post_id")
+            data = json.loads(LAST_TRUMP_POST_FILE.read_text())
+            return data.get("timestamp"), data.get("post_id")
         except Exception as e:
             logging.error(f"Failed to load last post: {e}")
             return None, None
@@ -42,8 +34,7 @@ def load_last_post():
 
 def save_last_post(timestamp: str, post_id: int | str):
     try:
-        with open(LAST_POST_FILE, "w") as f:
-            json.dump({"timestamp": timestamp, "post_id": str(post_id)}, f)
+        LAST_TRUMP_POST_FILE.write_text(json.dumps({"timestamp": timestamp, "post_id": str(post_id)}))
     except Exception as e:
         logging.error(f"Failed to save last post: {e}")
 
@@ -63,7 +54,7 @@ def _fetch_statuses():
     )
 
     api = tb.Api()
-    statuses_iter = api.pull_statuses("realDonaldTrump")
+    statuses_iter = api.pull_statuses(TRUMP_USERNAME)
     return list(islice(statuses_iter, 3))
 
 async def check_trump_posts(send_telegram_func):
@@ -97,7 +88,7 @@ async def check_trump_posts(send_telegram_func):
                         f"🚨 <b>TRUMP TRUTH - POTENTIAL OIL/WAR IMPACT</b>\n\n"
                         f"{clean_text}\n\n"
                         f"🕒 {post_time}\n"
-                        f"🔗 https://truthsocial.com/@realDonaldTrump/posts/{post_id}"
+                        f"🔗 https://truthsocial.com/@{TRUMP_USERNAME}/posts/{post_id}"
                     )
                     await send_telegram_func(message)
                     logging.info(f"Sent Trump alert for post {post_id}")
