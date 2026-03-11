@@ -54,8 +54,18 @@ def _fetch_statuses():
     )
 
     api = tb.Api()
-    statuses_iter = api.pull_statuses(TRUMP_USERNAME)
-    return list(islice(statuses_iter, 3))
+    try:
+        statuses_iter = api.pull_statuses(TRUMP_USERNAME)
+        statuses = list(islice(statuses_iter, 3))
+        return statuses if statuses is not None else []
+    except TypeError as e:
+        if "subscriptable" in str(e).lower():
+            logging.warning(
+                "Truth Social API returned non-JSON (likely Cloudflare block). "
+                "Try: residential proxy (http_proxy/https_proxy), different network, or wait."
+            )
+            return []
+        raise
 
 async def check_trump_posts(send_telegram_func):
     try:
