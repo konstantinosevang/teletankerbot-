@@ -1,5 +1,5 @@
 """
-Teletankerbot - fetches BDTI, monitors Trump Truth Social, Hormuz tanker tracking.
+Teletankerbot - fetches BDTI, monitors Trump Truth Social.
 """
 import asyncio
 import logging
@@ -11,7 +11,6 @@ import aiohttp
 from dotenv import load_dotenv
 from db import init_db, insert_bdti
 from truth_monitor import check_trump_posts
-from marinetraffic import run_feed as run_hormuz_feed
 from props import (
     TICKER_URL,
     BDTI_INDEX_NAME,
@@ -136,9 +135,6 @@ async def run_scheduled_loop():
 
     asyncio.create_task(trump_loop())
     log.info("Trump Truth Social monitoring started (every %s s)", TRUMP_CHECK_INTERVAL_SEC)
-
-    asyncio.create_task(run_hormuz_feed(send_telegram))
-    log.info("Tanker activity feed started (VesselAPI, Strait enter/exit)")
 
     while True:
         delay = _seconds_until_next_schedule()
